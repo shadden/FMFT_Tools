@@ -9,6 +9,6 @@ samfmft: samfmft.c nrutil.o fmft.o
 main_fmft: main_fmft.c nrutil.o fmft.o
 	gcc -o $@ $^  -lm
 %.o: %.c 
-	gcc -c $< 
+	gcc -fPIC -c $< 
 clean:
 	rm -f *.o *.mod 
