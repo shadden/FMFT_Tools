@@ -44,3 +44,14 @@ int fmftWrap(double my_out[][3], int nfreq, double minfreq, double maxfreq, int 
 	
 	return err;
 }
+
+double array2D(double array[][2], int num_entries)
+{
+    int i;
+    double sum = 0.0;
+    for (i = 0; i < num_entries; i++)
+    {
+        sum += array[i][0] + array[i][1];
+    }
+    return sum ;
+}

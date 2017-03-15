@@ -1,7 +1,9 @@
+import matplotlib.pyplot as plt
 from ctypes import *
 import numpy as np
 
-LIBPATH = "/Users/samuelhadden/19_FMFT"
+#LIBPATH = "/Users/samuelhadden/19_FMFT"
+LIBPATH = "/projects/b1002/shadden/12_FMFT_tools"
 
 def get_ctype_ptr(dtype,dim,**kwargs):
 	return np.ctypeslib.ndpointer(dtype=dtype,ndim=dim,flags='C',**kwargs)
@@ -13,22 +15,33 @@ ppd = POINTER(pd)
 p1dInt = get_ctype_ptr(np.int,1)
 
 def nearest_pow2(x):
-	int(2**np.floor(np.log2(x)))
+	return int(2**np.floor(np.log2(x)))
 	
 class libwrapper(object):
 	""" A wrapper class for the FMFT library.  Gives access to the function fmft"""
 	def __init__(self):
 		
 		self.lib = CDLL("%s/libfmft.so" % LIBPATH)
+		
 		self._fmft = self.lib.fmftWrap
-		self._fmft.argtypes =[p2d, c_int,c_double, c_double, c_int, p2d, c_long]
+		self._fmft.argtypes =[p2d, c_int, c_double, c_double, c_int, p2d, c_long]
 		self._fmft.restype = c_int
 		def check_errors(ret, func, args):
 			if ret<=0:
 				raise RuntimeError("FMFT returned error code %d for the given arguments"%ret)
 			return ret
 		self._fmft.errcheck = check_errors
-	def fmft(self, nfreq, minfreq, maxfreq, flag, input, ndata):
+	
+	
+		self._array2D = self.lib.array2D
+		self._array2D.argtypes = [p2d, c_int]
+		self._array2D.restype = c_double
+
+	def example(self,data):
+		n = len(data)
+		return self._array2D(data,n)
+		
+	def fmft_full(self, nfreq, minfreq, maxfreq, flag, inpt, ndata):
 		"""
 		In the output array **output: output[3*flag-2][i], output[3*flag-1][i] 
 		and output[3*flag][i] are the i-th frequency, amplitude and phase; nfreq is the 
@@ -49,17 +62,70 @@ class libwrapper(object):
 		The vectors input[1][j] and input[2][j], j = 1 ... ndata (ndata must
 		be a power of 2), are the input data X(j-1) and Y(j-1).
 		"""
-		output = np.empty((nfreq,3),order='C')
+		output = np.empty((nfreq,3),order='C',dtype=np.float64)
 		try:
-			self._fmft( output, nfreq, minfreq, maxfreq,flag, np.array(input,order='C') , ndata)
+			self._fmft( output, nfreq, minfreq, maxfreq,flag, np.array(inpt,order='C',dtype=np.float64)  , c_long(ndata) )
 			return output
 		except RuntimeError:
 			print "FMFT failed!"
 			return output
+
+	def fmft(self,nfreq,inpt):
+                """
+                A simplified version of the full fmft routine that automatically computes
+                the number of data points to use based on the length of the input data and
+                limits the frequency range between -1/2 to 1/2 cycles per sampling period,
+                i.e., the Nyquist frequencies.
+                """
+                ndata = nearest_pow2(len(inpt))
+                nyq = 2*np.pi * 0.49
+                method = 3
+                return self.fmft_full(nfreq,-1.*nyq,nyq,method,inpt,ndata)
+
+def fmft_plot(wrap,nfreq,inpt):
+	
+	out = wrap.fmft(nfreq,inpt)
+	times = inpt[:,0]
+	# Get FMFT-approximation of data
+	simdata  = np.zeros((len(times),2))
+	for o in out:
+		w,a,p = o
+		simdata[:,0] = simdata[:,0] + a*np.cos(w * times + p)
+		simdata[:,1] = simdata[:,1] + a*np.sin(w * times + p) 
+	plt.plot(times,simdata[:,0],'b--')
+	plt.plot(times,simdata[:,1],'g--')			
+	plt.plot(times,inpt[:,1],'k-')
+	plt.plot(times,inpt[:,2],'r-')			
+	plt.show()
 if __name__=="__main__":
+
+	npts = 2*512
+	times = np.linspace(0,2*np.pi*300,npts)
+	data = np.zeros((npts,2))
+
+	for w in [0.1 ,0.01, 0.03, 0.02]:
+		
+		amp = np.random.rand()
+		phase = np.random.rand()
+		data[:,0] = data[:,0] + amp*np.cos(w*times + phase) 
+		data[:,1] = data[:,1] + amp*np.sin(w*times + phase)
+		
+	figure()
+	plot(times,data[:,0],'k-')
+	plot(times,data[:,1],'r-')			
+	
 	ff = libwrapper()
-	x = np.loadtxt("tmp/tp177.aei",skiprows=4)
-	zz=np.vstack(( x[:,0], x[:,2]*np.cos(x[:,4]*np.pi/180.),x[:,2]*np.sin(x[:,4]*np.pi/180.) )).T
-	out = ff.fmft(4,-.3,.3,2,zz,128)
-	for l in out:
-		print l
+	fulldata = np.hstack((times.reshape(-1,1),data))
+	out = ff.fmft(3,fulldata)
+
+	simdata  = np.zeros((npts,2))
+	for o in out:
+		print o
+		w,a,p = o
+		simdata[:,0] = simdata[:,0] + a*np.cos(w * times + p)
+		simdata[:,1] = simdata[:,1] + a*np.sin(w * times + p) 
+		
+	plot(times,simdata[:,0],'y--')
+	plot(times,simdata[:,1],'g--')			
+	show()
+
